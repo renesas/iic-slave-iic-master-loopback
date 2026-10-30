@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>README-IIC-Slave</title>
+  <style>
+
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+
+ul.task-list[class]{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+font-size: inherit;
+width: 0.8em;
+margin: 0 0.8em 0.2em -1.6em;
+vertical-align: middle;
+}
+</style>
+  <style type="text/css">:root {
+--brand: #2b0a8c;
+--accent: #e6007e;
+--ink: #1f2430;
+--muted: #667085;
+--line: #e4e7ec;
+--surface: #f7f7fb;
+}
+* {
+box-sizing: border-box;
+}
+html {
+scroll-behavior: smooth;
+}
+body {
+margin: 0 auto;
+max-width: 1120px;
+padding: 50px;
+color: var(--ink);
+background: #ffffff;
+font-family: "Segoe UI", Arial, sans-serif;
+line-height: 1.65;
+}
+a {
+color: var(--brand);
+}
+a:hover {
+color: var(--accent);
+}
+h1 {
+margin-top: 2.7rem;
+padding-bottom: 0.35rem;
+border-bottom: 2px solid var(--line);
+}
+h2 {
+margin-top: 2.4rem;
+padding-bottom: 0.3rem;
+border-bottom: 1px solid var(--line);
+}
+h3,
+h4,
+h5,
+h6 {
+margin-top: 2rem;
+}
+img {
+display: block;
+max-width: 100%;
+height: auto;
+margin: 1rem auto 0.35rem;
+}
+table {
+width: 100%;
+border-collapse: collapse;
+margin: 1.25rem 0;
+}
+th,
+td {
+border: 1px solid var(--line);
+padding: 0.7rem;
+vertical-align: top;
+}
+th {
+background: var(--surface);
+text-align: left;
+}
+blockquote {
+margin: 1.2rem 0;
+padding: 0.7rem 1rem;
+border-left: 4px solid var(--brand);
+background: var(--surface);
+}
+code {
+font-family: Consolas, "Courier New", monospace;
+}
+pre {
+overflow-x: auto;
+padding: 1rem;
+border-radius: 8px;
+background: var(--surface);
+}
+
+body > h1:first-of-type {
+margin: -50px calc(50% - 50vw) 3rem;
+padding: 3.5rem max(50px, calc((100vw - 1120px) / 2));
+border: 0;
+background: linear-gradient(135deg, #250777, #3e16a3);
+color: #ffffff;
+font-size: clamp(2rem, 5vw, 3.5rem);
+line-height: 1.1;
+}
+@media (max-width: 640px) {
+body {
+padding: 20px;
+}
+body > h1:first-of-type {
+margin-top: -20px;
+padding: 2.5rem 20px;
+}
+}
+</style>
+</head>
+<body>
+<h1 id="iic-slave">IIC Slave</h1>
+<h2 id="overview">Overview</h2>
+<p>This SBB demonstrates typical use of the Renesas FSP IIC Slave HAL
+APIs with an IIC Master and IIC Slave configured on the same RA board
+and connected in loopback. The reference application initializes both
+modules at the standard rate, alternates between Slave receive and Slave
+transmit operations, compares the transmitted and received buffers after
+each transaction, indicates results with the on-board LEDs, and reports
+status or errors through a serial terminal.</p>
+<blockquote>
+<p><strong>Board scope:</strong> The supplied <code>readme.txt</code>
+explicitly lists <strong>FPB-RA0L1</strong> and
+<strong>FPB-RA8E1</strong> as supported and provides loopback
+connections for them. It does <strong>not</strong> list FPB-RA2E3,
+FPB-RA4E2, or FPB-RA6E2. Therefore, this document does not invent
+configurations for those three boards.</p>
+</blockquote>
+<h2 id="1-what-use-case-does-this-sbb-demonstrate">1. What use case does
+this SBB demonstrate?</h2>
+<p>The SBB demonstrates IIC Slave operation using an on-board loopback
+between an IIC Master channel and an IIC Slave channel.</p>
+<p>After initialization, the reference application alternates between
+two operations:</p>
+<ol type="1">
+<li><strong>Slave read (receive):</strong> the Master writes a six-byte
+buffer and the Slave receives it.</li>
+<li><strong>Slave write (transmit):</strong> the Master reads a six-byte
+buffer transmitted by the Slave.</li>
+</ol>
+<p>After each completed transaction, the received buffer is compared
+with the transmitted buffer. The application blinks the on-board LED
+after a successful operation. On an application-detected failure, the
+error handler turns the LED on, prints the error, deinitializes the IIC
+modules, and enters a breakpoint trap.</p>
+<h2 id="2-what-does-the-sbb-core-code-do">2. What does the SBB core code
+do?</h2>
+<p>The core implementation is in <code>iic_slave_ep.c</code> and
+<code>iic_slave_ep.h</code>.</p>
+<p>It provides the following functions:</p>
+<ul>
+<li>Initializes the configured IIC Master and IIC Slave drivers.</li>
+<li>Performs Slave receive and Slave transmit demonstrations.</li>
+<li>Starts the corresponding Master transaction that drives each
+loopback transfer.</li>
+<li>Uses Master and Slave callbacks to capture IIC events.</li>
+<li>Services <code>I2C_SLAVE_EVENT_RX_REQUEST</code> by calling the
+configured Slave read API.</li>
+<li>Services <code>I2C_SLAVE_EVENT_TX_REQUEST</code> by calling the
+configured Slave write API.</li>
+<li>Waits for the expected Master and Slave completion events.</li>
+<li>Detects aborted transfers, Slave API failures, and polling timeout
+conditions.</li>
+<li>Compares the source and destination buffers after each
+transfer.</li>
+<li>Closes the Master and Slave modules during deinitialization.</li>
+<li>Provides LED helper functions used by the demonstration.</li>
+</ul>
+<p>The header maps the common SBB macros to the applicable FSP IIC/IICA
+APIs at compile time, including <code>R_IICA_MASTER</code>,
+<code>R_IICA_SLAVE</code>, <code>R_IIC_MASTER</code>, and
+<code>R_IIC_SLAVE</code> for the board families relevant to this
+document.</p>
+<h2 id="3-what-is-demoreference-application-code-versus-reusable-sbb-code">3.
+What is demo/reference application code versus reusable SBB code?</h2>
+<h3 id="sbbcore-implementation">SBB/core implementation</h3>
+<ul>
+<li><code>iic_slave_ep.c</code></li>
+<li><code>iic_slave_ep.h</code></li>
+</ul>
+<p>These files contain the IIC Master/Slave transaction logic,
+callbacks, buffers, event checking, driver
+initialization/deinitialization, and LED helpers.</p>
+<h3 id="demoreference-application">Demo/reference application</h3>
+<ul>
+<li><code>iic_slave_example_app.c</code></li>
+<li><code>iic_slave_example_app.h</code></li>
+</ul>
+<p>The reference application provides the demonstration orchestration.
+<code>iic_slave_example_app_run()</code>:</p>
+<ol type="1">
+<li>Initializes the UART console.</li>
+<li>Retrieves the FSP version and prints the application banner.</li>
+<li>Sets the LED off.</li>
+<li>Initializes the IIC Master and Slave drivers.</li>
+<li>Alternates between <code>i2c_slave_read()</code> and
+<code>i2c_slave_write()</code>.</li>
+<li>Blinks the LED and prints a success message after each successful
+operation.</li>
+<li>Applies a <code>TOGGLE_DELAY</code> between operations.</li>
+<li>Routes failures through its private <code>handle_error()</code>
+function.</li>
+</ol>
+<p><code>hal_entry.c</code> is described by the application source as
+calling the single reference-application entry point
+<code>iic_slave_example_app_run()</code>.</p>
+<h2 id="4-which-public-functions-should-i-look-at-first">4. Which public
+functions should I look at first?</h2>
+<h3 id="fsp_err_t-init_i2c_drivervoid"><code>fsp_err_t init_i2c_driver(void)</code></h3>
+<p>Opens the configured IIC Master instance and then the configured IIC
+Slave instance.</p>
+<h3 id="fsp_err_t-i2c_slave_readvoid"><code>fsp_err_t i2c_slave_read(void)</code></h3>
+<p>Demonstrates the Slave receive path. It prepares a Master transmit
+buffer, initiates the Master write, waits for Master TX complete and
+Slave RX complete events, and compares the Slave receive buffer with the
+Master buffer.</p>
+<h3 id="fsp_err_t-i2c_slave_writevoid"><code>fsp_err_t i2c_slave_write(void)</code></h3>
+<p>Demonstrates the Slave transmit path. It prepares the Slave transmit
+buffer, initiates a Master read, waits for Master RX complete and Slave
+TX complete events, and compares the Master receive buffer with the
+Slave transmit buffer.</p>
+<h3 id="void-deinit_i2c_drivervoid"><code>void deinit_i2c_driver(void)</code></h3>
+<p>Closes the Master and Slave modules if they are open.</p>
+<h3 id="callbacks">Callbacks</h3>
+<p>The implementation also defines <code>i2c_master_callback()</code>
+and <code>i2c_slave_callback()</code>. The Master callback records the
+latest Master event. The Slave callback starts the Slave read/write API
+when an RX or TX request occurs and records other Slave events for
+transfer validation.</p>
+<h3 id="demo-entry-point">Demo entry point</h3>
+<p><code>void iic_slave_example_app_run(void)</code> is the place to
+start when reviewing the complete reference-application flow.</p>
+<h2 id="5-what-configuration-assumptions-were-made-for-the-reference-board">5.
+What configuration assumptions were made for the reference board?</h2>
+<h3 id="fpb-ra0l1">FPB-RA0L1</h3>
+<p>The reference configuration uses IICA channel 1 for the Master and
+IICA channel 0 for the Slave.</p>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Master</th>
+<th>Slave</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SDA</td>
+<td>SDAA1 P407 (J1:12)</td>
+<td>SDAA0 P913 (J1:15)</td>
+</tr>
+<tr>
+<td>SCL</td>
+<td>SCLA1 P408 (J1:11)</td>
+<td>SCLA0 P914 (J1:14)</td>
+</tr>
+</tbody>
+</table>
+<p>Connect Master SDA to Slave SDA and Master SCL to Slave SCL. Place
+jumper <strong>J9 on pins 1-2</strong> to use the on-board debug
+functionality.</p>
+<p>The README states that external <strong>3.9 kΩ or 4.7 kΩ pull-up
+resistors</strong> are required for IIC Slave operation on boards not
+included in its exception list. FPB-RA0L1 is not in that exception
+list.</p>
+<p>The README also states that DTC does not support the IICA module on
+FPB-RA0L1.</p>
+<h3 id="fpb-ra8e1">FPB-RA8E1</h3>
+<p>The reference configuration uses IIC channel 1 for the Master and
+channel 0 for the Slave.</p>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Master</th>
+<th>Slave</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SDA</td>
+<td>SDA1 P511 (J4:4)</td>
+<td>SDA0 P409 (J2:11)</td>
+</tr>
+<tr>
+<td>SCL</td>
+<td>SCL1 P512 (J4:3)</td>
+<td>SCL0 P410 (J2:12)</td>
+</tr>
+</tbody>
+</table>
+<p>Connect Master SDA to Slave SDA and Master SCL to Slave SCL. Open
+jumpers <strong>J6 and J9</strong> to use the on-board debug
+functionality.</p>
+<p>FPB-RA8E1 appears in the README’s exception list for external I2C
+pull-up resistors.</p>
+<h3 id="fpb-ra2e3-fpb-ra4e2-and-fpb-ra6e2">FPB-RA2E3, FPB-RA4E2, and
+FPB-RA6E2</h3>
+<p>The supplied README does not list these boards as supported by this
+IIC Slave example and provides no Master/Slave channel or pin mapping
+for them. No configuration for these boards is asserted in this
+document.</p>
+<h3 id="common-pin-assumptions">Common pin assumptions</h3>
+<p>The README requires SDA and SCL to be configured with
+<strong>n-channel open-drain</strong> output type.</p>
+<h3 id="dtc-configuration">DTC configuration</h3>
+<p>DTC transfer support is configurable, and the README states that DTC
+transfer is enabled in the FSP Configurator for this example. It also
+notes that DTC is helpful for minimizing interrupts during large
+transactions.</p>
+<h3 id="transfer-size-and-test-data">Transfer size and test data</h3>
+<p><code>BUF_LEN</code> is six bytes. The implementation initializes its
+example payload arrays with five explicit nonzero values; the remaining
+byte is zero-initialized by C array initialization.</p>
+<h3 id="serial-terminal">Serial terminal</h3>
+<p>The supplied README specifies:</p>
+<ul>
+<li>Port: J-Link On-Board serial port</li>
+<li>Speed: 115200</li>
+<li>Data: 8 bits</li>
+<li>Parity: none</li>
+<li>Stop bits: 1</li>
+<li>Flow control: none</li>
+<li>Receive newline: CR</li>
+<li>Transmit newline: CR</li>
+<li>Local echo: enabled</li>
+</ul>
+<h2 id="6-what-must-i-change-for-my-board-pins-clocks-timing-memory-task-priorities-or-middleware-setup">6.
+What must I change for my board, pins, clocks, timing, memory, task
+priorities, or middleware setup?</h2>
+<h3 id="board-and-pins">Board and pins</h3>
+<p>The supplied example depends on a loopback between two IIC
+interfaces. When moving away from the supplied reference configuration,
+update the FSP pin/peripheral configuration and physical loopback
+connections for the intended Master and Slave channels. SDA and SCL must
+retain the open-drain configuration specified by the README, and
+external pull-ups must be provided where required by the target
+setup.</p>
+<h3 id="generated-fsp-instances">Generated FSP instances</h3>
+<p>The core source directly references:</p>
+<ul>
+<li><code>g_i2c_master_ctrl</code></li>
+<li><code>g_i2c_master_cfg</code></li>
+<li><code>g_i2c_slave_ctrl</code></li>
+<li><code>g_i2c_slave</code></li>
+</ul>
+<p>A project using different generated instance names must account for
+these references.</p>
+<h3 id="driver-selection">Driver selection</h3>
+<p><code>iic_slave_ep.h</code> selects between IICA, IIC_B, and IIC
+driver APIs according to peripheral availability and board definitions.
+The target project must therefore provide an FSP configuration
+compatible with the selected macro path.</p>
+<h3 id="timing">Timing</h3>
+<p><code>TOGGLE_DELAY</code> is defined as 1000 and is passed to
+<code>R_BSP_SoftwareDelay()</code> with millisecond units both when
+blinking the LED and between reference-application operations.</p>
+<p>Transfer completion uses a <code>uint16_t</code> counter initialized
+to <code>UINT16_MAX</code>. The supplied source does not define this
+counter as a specific elapsed-time duration, so it should not be
+interpreted as a documented millisecond or microsecond timeout.</p>
+<h3 id="buffers-and-memory">Buffers and memory</h3>
+<p>The core contains three static buffers, each sized by
+<code>BUF_LEN</code>:</p>
+<ul>
+<li>Slave transmit buffer</li>
+<li>Slave receive buffer</li>
+<li>Master buffer</li>
+</ul>
+<p><code>BUF_LEN</code> is six in the supplied implementation. Changes
+to the transfer size require corresponding review of the payload
+initialization, Master/Slave read/write calls, and buffer
+comparisons.</p>
+<h3 id="clocks">Clocks</h3>
+<p>The README says the example initializes the IIC Master and Slave
+modules at the <strong>standard rate</strong>, but the supplied files do
+not state explicit peripheral clock frequencies or detailed clock-tree
+settings.</p>
+<h3 id="task-priorities-and-rtos">Task priorities and RTOS</h3>
+<p>The supplied source does not define RTOS tasks or task priorities. No
+RTOS priority values are documented in these files.</p>
+<h3 id="middlewareconsole">Middleware/console</h3>
+<p>The reference application uses <code>console/uart_console.h</code>,
+<code>printf()</code>, <code>uart_console_init()</code>, and
+<code>uart_console_flush()</code> for terminal output. These belong to
+the reference application’s logging/error path and must be accounted for
+if that application layer is retained.</p>
+<h2 id="7-what-dependencies-does-the-sbb-have-on-fsp-middleware-drivers-services-or-hardware-resources">7.
+What dependencies does the SBB have on FSP, middleware, drivers,
+services, or hardware resources?</h2>
+<h3 id="fsp-and-generated-configuration">FSP and generated
+configuration</h3>
+<p>The SBB includes <code>hal_data.h</code> and uses generated IIC
+Master, IIC Slave, and I/O port objects.</p>
+<p>Depending on compile-time selection, the code maps to these IIC API
+families:</p>
+<ul>
+<li><code>R_IICA_MASTER_*</code></li>
+<li><code>R_IICA_SLAVE_*</code></li>
+<li><code>R_IIC_MASTER_*</code></li>
+<li><code>R_IIC_SLAVE_*</code></li>
+<li><code>R_IIC_B_MASTER_*</code> and <code>R_IIC_B_SLAVE_*</code> for
+the separately handled board path present in the source</li>
+</ul>
+<p>The code also uses:</p>
+<ul>
+<li><code>R_BSP_SoftwareDelay()</code></li>
+<li><code>R_IOPORT_PinWrite()</code></li>
+<li><code>g_bsp_leds</code></li>
+<li><code>g_ioport</code></li>
+</ul>
+<p>The reference application uses <code>R_FSP_VersionGet()</code>.</p>
+<h3 id="optionalconfigured-dtc-dependency">Optional/configured DTC
+dependency</h3>
+<p>The README states that DTC transfer support is configurable and
+enabled in the FSP Configurator in this example, with the explicit
+limitation that DTC does not support the IICA module on FPB-RA0L1.</p>
+<h3 id="reference-application-console-dependency">Reference-application
+console dependency</h3>
+<p>The demo uses the UART console service and standard
+<code>printf()</code> for status and error output.</p>
+<h3 id="hardware-resources">Hardware resources</h3>
+<p>For the supported configurations documented here, the example
+uses:</p>
+<ul>
+<li>Two IIC channels on the same MCU, one Master and one Slave.</li>
+<li>Two jumper wires for SDA and SCL loopback.</li>
+<li>On-board LED resources.</li>
+<li>J-Link on-board debug/serial functionality.</li>
+<li>External SDA/SCL pull-up resistors where required.</li>
+</ul>
+<h2 id="8-what-behavior-and-performance-were-demonstrated-or-measured">8.
+What behavior and performance were demonstrated or measured?</h2>
+<h3 id="demonstrated-behavior">Demonstrated behavior</h3>
+<p>The supplied files demonstrate:</p>
+<ul>
+<li>IIC Master and Slave initialization.</li>
+<li>Six-byte Master-to-Slave data transfer.</li>
+<li>Six-byte Slave-to-Master data transfer.</li>
+<li>Slave RX and TX request processing through the Slave callback.</li>
+<li>Master and Slave completion-event checking.</li>
+<li>Buffer comparison following successful transactions.</li>
+<li>LED indication following successful operations.</li>
+<li>Error reporting and LED-on indication in the reference application’s
+error path.</li>
+<li>Alternation between Slave receive and transmit operations with a
+1000 ms reference delay.</li>
+</ul>
+<h3 id="performance-measurements">Performance measurements</h3>
+<p>The supplied README and source files do not provide measured
+throughput, CPU utilization, interrupt latency, transfer latency, memory
+footprint, power consumption, or maximum transaction rate. The
+documented standard-rate configuration and 1000 ms application/LED delay
+are reference configuration behavior, not reported performance
+measurements.</p>
+<h2 id="9-what-files-are-safe-to-modify-and-what-files-are-generated-preset-or-demo-only">9.
+What files are safe to modify and what files are generated, preset, or
+demo-only?</h2>
+<h3 id="core-sbb-files">Core SBB files</h3>
+<ul>
+<li><code>iic_slave_ep.c</code></li>
+<li><code>iic_slave_ep.h</code></li>
+</ul>
+<p>These contain the IIC transaction implementation, callbacks, public
+core APIs, buffers, LED helpers, event handling, and compile-time FSP
+API mapping.</p>
+<h3 id="demoreference-application-files">Demo/reference application
+files</h3>
+<ul>
+<li><code>iic_slave_example_app.c</code></li>
+<li><code>iic_slave_example_app.h</code></li>
+</ul>
+<p>These contain reference-application sequencing, console output,
+success/error presentation, and the alternating demonstration loop.</p>
+<h3 id="fsp-generated-content">FSP-generated content</h3>
+<p>The supplied core includes <code>hal_data.h</code> and consumes
+generated instances, but the attached files do not enumerate all
+generated project files. Peripheral, channel, pin, DTC, and callback
+configuration associated with generated FSP instances should be treated
+separately from the handwritten files documented above.</p>
+<p>The supplied material does not explicitly label individual generated
+files as safe or unsafe for manual modification, so this document does
+not assert a file-by-file generated-code modification policy beyond
+identifying the direct generated configuration dependency.</p>
+<h2 id="10-what-happens-if-i-modify-the-source-and-later-want-to-adopt-a-newer-sbb-release">10.
+What happens if I modify the source and later want to adopt a newer SBB
+release?</h2>
+<p>The supplied README and source files do not document a formal SBB
+upgrade, migration, or source-compatibility procedure.</p>
+<p>As integration guidance, keep locally changed SBB source under
+version control and compare those changes with a newer SBB release
+before replacing the local implementation. Changes to the core APIs,
+callbacks, compile-time driver selection, buffer length,
+generated-instance references, or transfer/event logic are the areas
+most directly coupled to this implementation and therefore deserve
+explicit review during an update.</p>
+<p>Changes limited to reference-application behavior can be kept
+separate from changes to the core transaction implementation, which
+makes the distinction between application customization and SBB
+integration clearer when reviewing a later release.</p>
+<h2 id="reference-application-flow">Reference Application Flow</h2>
+<pre class="text"><code>hal_entry()
+  -&gt; iic_slave_example_app_run()
+       -&gt; uart_console_init()
+       -&gt; R_FSP_VersionGet()
+       -&gt; set_led(LED_OFF)
+       -&gt; init_i2c_driver()
+       -&gt; repeat
+            -&gt; i2c_slave_read()
+                 Master write -&gt; Slave RX request -&gt; Slave read
+                 wait for Master TX complete + Slave RX complete
+                 compare buffers
+            -&gt; blink_led()
+            -&gt; i2c_slave_write()
+                 Master read -&gt; Slave TX request -&gt; Slave write
+                 wait for Master RX complete + Slave TX complete
+                 compare buffers
+            -&gt; blink_led()</code></pre>
+<h2 id="integration-checklist">Integration Checklist</h2>
+<ul class="task-list">
+<li><label><input type="checkbox"></input>Use FPB-RA0L1 or FPB-RA8E1 when
+following the supplied README exactly.</label></li>
+<li><label><input type="checkbox"></input>Do not assume the supplied files
+define FPB-RA2E3, FPB-RA4E2, or FPB-RA6E2 configurations.</label></li>
+<li><label><input type="checkbox"></input>Connect the configured Master
+SDA/SCL pins to the corresponding Slave SDA/SCL pins.</label></li>
+<li><label><input type="checkbox"></input>Configure SDA and SCL as n-channel
+open drain.</label></li>
+<li><label><input type="checkbox"></input>Add 3.9 kΩ or 4.7 kΩ pull-ups where
+required by the README/reference hardware.</label></li>
+<li><label><input type="checkbox"></input>Verify the FSP-generated Master and
+Slave instances used by the core source.</label></li>
+<li><label><input type="checkbox"></input>Configure the Master and Slave
+callbacks used by the implementation.</label></li>
+<li><label><input type="checkbox"></input>Review DTC configuration; note the
+documented IICA limitation on FPB-RA0L1.</label></li>
+<li><label><input type="checkbox"></input>Review <code>BUF_LEN</code> and the
+demonstration payload when changing transfer size.</label></li>
+<li><label><input type="checkbox"></input>Retain the UART console dependency
+only if the reference terminal-output behavior is needed.</label></li>
+</ul>
+</body>
+</html>
